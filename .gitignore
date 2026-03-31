@@ -1,0 +1,6 @@
+.DS_Store
+__pycache__
+.mypy_cache
+macrospin
+skyrmion_system-Oxs_*.omf
+!skyrmion_system-Oxs_TimeDriver-Magnetization-0000000-0000000.omf

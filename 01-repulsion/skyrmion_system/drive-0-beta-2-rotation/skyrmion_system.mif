@@ -1,0 +1,79 @@
+# MIF 2.2
+
+SetOptions {
+  basename skyrmion_system
+  scalar_output_format %.12g
+  scalar_field_output_format {binary 8}
+  vector_field_output_format {binary 8}
+}
+
+# BoxAtlas for main_atlas
+Specify Oxs_BoxAtlas:main_atlas {
+  xrange { -5.0 5.0 }
+  yrange { -5.0 5.0 }
+  zrange { 0.0 0.025 }
+  name main
+}
+
+# PeriodicRectangularMesh
+Specify Oxs_PeriodicRectangularMesh:mesh {
+  cellsize { 0.025 0.025 0.025 }
+  atlas :main_atlas
+  periodic xy
+}
+
+# UniformExchange
+Specify Oxs_UniformExchange:exchange {
+  A 1
+}
+
+# UniaxialAnisotropy
+Specify Oxs_UniaxialAnisotropy:uniaxialanisotropy {
+  K1 1
+  axis {0 0 1}
+}
+
+# dmi_D file
+Specify Oxs_FileVectorField:dmi_D {
+  file dmi_D.ovf
+  atlas :main_atlas
+}
+
+# DMI of crystallographic class Cnv_z
+Specify Oxs_DMI_Cnv_z:dmi {
+  D dmi_D
+}
+
+# m0 file
+Specify Oxs_FileVectorField:m0 {
+  file m0.omf
+  atlas :main_atlas
+}
+
+# m0_norm
+Specify Oxs_VecMagScalarField:m0_norm {
+    field :m0
+}
+
+# RungeKuttaEvolver
+Specify Oxs_RungeKuttaEvolve:evolver {
+  alpha 0.05
+  gamma_G 221276.14872118403
+}
+
+# TimeDriver
+Specify Oxs_TimeDriver {
+  evolver :evolver
+  mesh :mesh
+  Ms :m0_norm
+  m0 :m0
+  stopping_time 0.001
+  stage_count 1000
+}
+
+Destination table mmArchive
+Destination mags mmArchive
+Destination archive mmArchive
+
+Schedule DataTable table Step 10000
+Schedule Oxs_TimeDriver::Magnetization mags Step 10000
