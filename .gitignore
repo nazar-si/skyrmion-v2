@@ -5,3 +5,8 @@ macrospin
 skyrmion_system-Oxs_*.omf
 !skyrmion_system-Oxs_TimeDriver-Magnetization-0000000-0000000.omf
 .vscode
+skyrmion_system.mif
+skyrmion_system.odt
+skyrmion_system.restart
+m0.omf
+dmi_D.ovf
