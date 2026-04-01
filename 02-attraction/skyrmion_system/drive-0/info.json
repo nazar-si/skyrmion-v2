@@ -1,0 +1,1 @@
+{"drive_number": 0, "date": "2026-04-01", "time": "15:04:01", "start_time": "2026-04-01T15:04:01", "adapter": "oommfc", "adapter_version": "0.66.0", "driver": "TimeDriver", "output_step": true, "t": 1, "n": 1000, "steps": 5000, "n_threads": 12}

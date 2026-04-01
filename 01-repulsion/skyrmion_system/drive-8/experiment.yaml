@@ -1,0 +1,32 @@
+version: 1
+name: beta=-2-rotation
+description: Segmented run for repulsion with larger amount of steps before refitting
+  with larger field.
+driver: time
+width: 7
+height: 7
+dx: 0.025
+Ms: 1
+A: 1
+K: 1
+eps: 0.5
+gamma: 0
+beta: -3
+h: 1
+chi: 1
+eta: 0.001980264558769245
+R0: 1.06166546508265
+w0: 0.7539028542020935
+bc: xy
+damping: 0.05
+skyrmion_to:
+- 0
+- 0
+field_to:
+- 4.006972236903803
+- 3.434570944685719
+vortex_to:
+- -0.9930277630961968
+- 3.434570944685719
+source_dir: /Users/nazarsi/Desktop/science/skyrmions-v2/01-repulsion/skyrmion_system/drive-7-beta-2-rotation
+source_file: /Users/nazarsi/Desktop/science/skyrmions-v2/01-repulsion/skyrmion_system/drive-7-beta-2-rotation/skyrmion_system-Oxs_TimeDriver-Magnetization-0000000-0110000.omf

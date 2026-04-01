@@ -11,6 +11,10 @@ class Driver(Enum):
     TIME = "time"
     ENERGY = "energy"
 
+class BC(Enum):
+    PERIODIC = "xy"
+    NEUMANN = ""
+
 T = TypeVar("T", bound="Experiment")
 
 @dataclass
@@ -39,6 +43,7 @@ class Experiment:
     eta: float          = 0
     R0: float           = 0.0
     w0: float           = 0.0
+    bc: BC              = BC.PERIODIC
 
     damping: float      = 5e-2
 
@@ -59,6 +64,9 @@ class Experiment:
         # Enum → value
         if isinstance(self.driver, Enum):
             data["driver"] = self.driver.value
+
+        if isinstance(self.bc, Enum):
+            data["bc"] = self.bc.value
 
         # tuples → lists (YAML-safe)
         for key in ["skyrmion_to", "field_to", "vortex_to"]:
@@ -87,6 +95,9 @@ class Experiment:
         # restore enum
         if "driver" in data:
             data["driver"] = Driver(data["driver"])
+
+        if "bc" in data:
+            data["bc"] = BC(data["bc"])
 
         # lists → tuples
         for key in ["skyrmion_to", "field_to", "vortex_to"]:

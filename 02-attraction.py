@@ -1,0 +1,57 @@
+from scripts.mm.const import get_file
+from scripts.mm.experiment import BC, Experiment
+from scripts.mm.runner import run_experiment
+from scripts.mm.system import SystemBuilder
+import matplotlib.pyplot
+
+def create_experiment() -> Experiment:
+    return Experiment(
+        name="beta=1-rotation",
+        description="Run for attraction with beta=1.",
+
+        width=5,
+        height=5,
+        dx=0.025,
+
+        Ms=1,
+        A=1,
+        K=1,
+        damping=0.05,
+        bc=BC.PERIODIC,
+
+        eps=0.5,
+        gamma=0,
+        beta=1,
+        h=1,
+
+        chi=1,
+        eta=0,
+        R0=1.02,
+        w0=0.75,
+
+        skyrmion_to=(3, 0),
+        field_to=(0, 0),
+        vortex_to=(0, 0),
+    )
+
+
+def main():
+    builder = SystemBuilder()
+    drive_parent = "02-attraction"
+
+    exp = create_experiment()
+    system, driver = builder.from_experiment(exp)
+    def run():
+        return driver.drive(
+            system,
+            dirname=drive_parent,
+            output_step=True,
+            t=1,
+            n=1000,
+            steps=5000,
+            n_threads=12,
+        )
+    info = run_experiment(run, exp, drive_parent=drive_parent, stop_at_omf_step=500000)
+    print(info)
+if __name__ == "__main__":
+    main()

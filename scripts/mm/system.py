@@ -52,7 +52,7 @@ class SystemBuilder:
         cell = (dL, dL, dL)
 
         region = df.Region(p1=p1, p2=p2)
-        mesh = df.Mesh(region=region, cell=cell, bc="xy")
+        mesh = df.Mesh(region=region, cell=cell, bc=exp.bc.value)
 
         to = (
             exp.field_to[0] * l_w,
@@ -145,6 +145,7 @@ class SystemBuilder:
 
         m_file = m_file.resolve()
         system.m = df.Field.from_file(str(m_file))
+        system.m.mesh.bc = exp.bc.value
 
         # record provenance
         exp.source_dir = str(directory)
@@ -162,6 +163,7 @@ class SystemBuilder:
         self,
         exp: Experiment,
         magnetization: df.Field,
+        sample_stride: int = 1,
     ) -> Experiment:
         """
         Fit R0, w0, eta, skyrmion_to (x,y) from a given magnetization field by
@@ -169,10 +171,11 @@ class SystemBuilder:
 
         Notes
         -----
-        - `chi` is treated as fixed (taken from `exp`).
+        - `chi` is treated as fixed (taken from `experiment.chi`).
         - The error is computed as sum of squared per-spin differences:
           `(mx - mx_target)^2 + (my - my_target)^2 + (mz - mz_target)^2`.
         - For speed, the fit can subsample the grid (see `sample_stride`).
+        - `sample_stride` is the stride (step between points) of the grid to sample.
         """
         from scipy.optimize import least_squares
 
@@ -235,7 +238,6 @@ class SystemBuilder:
         eta_init = float(np.sum(dphi * core_weight) / (np.sum(core_weight) + 1e-12))
 
         # Subsample for speed.
-        sample_stride = 4
         sx = slice(None, None, sample_stride)
         sy = slice(None, None, sample_stride)
 

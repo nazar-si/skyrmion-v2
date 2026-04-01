@@ -38,23 +38,26 @@ def main():
     builder = SystemBuilder()
     drive_parent = "01-repulsion"
 
-    info = {}
+    info = {
+        "final_dir": "01-repulsion/skyrmion_system/drive-7-beta-2-rotation"
+    }
 
     index = 1
     while True:
-        if index == 1:
+        if index == 1 and False:
             exp = create_experiment()
         else:
             exp, system, driver = builder.from_directory(
                 info["final_dir"],
                 magnetization_index=-1,
             )
-            builder.fit_skyrmion_parameters(exp, system.m)
-            # shift coordinate system to skyrmion in center 
-            exp.vortex_to = (exp.vortex_to[0] - exp.skyrmion_to[0], exp.vortex_to[1] - exp.skyrmion_to[1])
-            exp.field_to = (exp.field_to[0] - exp.skyrmion_to[0], exp.field_to[1] - exp.skyrmion_to[1])
-            exp.skyrmion_to = (0, 0)
-        system, driver = builder.from_experiment(exp)
+            if index != 1:
+                builder.fit_skyrmion_parameters(exp, system.m)
+                # shift coordinate system to skyrmion in center 
+                exp.vortex_to = (exp.vortex_to[0] - exp.skyrmion_to[0], exp.vortex_to[1] - exp.skyrmion_to[1])
+                exp.field_to = (exp.field_to[0] - exp.skyrmion_to[0], exp.field_to[1] - exp.skyrmion_to[1])
+                exp.skyrmion_to = (0, 0)
+                system, driver = builder.from_experiment(exp)
         def run():
             return driver.drive(
                 system,
