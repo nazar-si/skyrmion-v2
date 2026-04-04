@@ -6,11 +6,11 @@ import matplotlib.pyplot
 
 def create_experiment() -> Experiment:
     return Experiment(
-        name="beta=1-rotation",
-        description="Run for attraction with beta=1.",
+        name="beta=3-rotation",
+        description="Run for attraction with beta=3.",
 
-        width=5,
-        height=5,
+        width=7,
+        height=7,
         dx=0.025,
 
         Ms=1,
@@ -21,13 +21,13 @@ def create_experiment() -> Experiment:
 
         eps=0.5,
         gamma=0,
-        beta=1,
+        beta=3,
         h=1,
 
         chi=1,
         eta=0,
-        R0=1.02,
-        w0=0.75,
+        R0=2.4480625523806787,
+        w0=0.878747540017559,
 
         skyrmion_to=(3, 0),
         field_to=(0, 0),
