@@ -54,6 +54,18 @@ def read_dir(dir_name: str, delete_files: bool = False, new_name = None, scaling
 def chirality(M):
     return np.gradient(M[:,:,2], axis=1) * M[:,:,0] + np.gradient(M[:,:,2], axis=0) * M[:,:,1]
 
+def spirality(M):
+    G = np.stack([np.gradient(M[:,:,2], axis=1), np.gradient(M[:,:,2], axis=0)])
+    # normalized gradient in XY plane (d_x m_x, d_y m_y)
+    G = G / np.linalg.norm(G, axis=0, ord=2)[None,:,:]
+    # $\chi$ is an angle of the magnetization in the plane perpendicular to it's gradient in XY plane  
+    CHI = np.atan2(
+        G[1] * M[:,:,0] - G[0] * M[:,:,1],
+        M[:,:,2]
+    )
+    
+    return CHI
+
 # Функция дает распределению цвет в зависимости от знака киральности (знака антисимметричного обмена)
 def chirality_signed_field(M, t = 0):
     return np.sign(chirality(M)) * (M[:, :, 2] + 1) / 2
@@ -61,10 +73,11 @@ def chirality_signed_field(M, t = 0):
 
 _cmap = Colormap('colorcet:cet_cbtc2').to_mpl()
 cmap = Colormap([_cmap(0), _cmap(0.25), _cmap(0.5), _cmap(0.75), _cmap(1)]).to_mpl()
+cmap_chi = Colormap([_cmap(0), Color('orchid'), _cmap(1)]).to_mpl()
 cmap2 = Colormap([cmap(0.5), Color('lightcoral'), cmap(0.5), Color('lightsteelblue'), cmap(0.5)]).to_mpl()
 # cmap2 = Colormap('colorcet:cet_c3').to_mpl()
 
-def draw_field(ax, M, mode: Literal['m_z', 'quiver', 'byside', 'chirality', 'normal', 'polar', 'rotation']='m_z', cutoff = 50, quiver_scale = 10, chirality_threshold = 0, rotate_to_average = False):
+def draw_field(ax, M, mode: Literal['m_z', 'quiver', 'byside', 'chirality', 'normal', 'polar', 'spirality', 'rotation']='m_z', cutoff = 50, quiver_scale = 10, chirality_threshold = 0, rotate_to_average = False):
     length = M.shape[0]
     density = length * 0.025
     if (rotate_to_average):
@@ -76,11 +89,13 @@ def draw_field(ax, M, mode: Literal['m_z', 'quiver', 'byside', 'chirality', 'nor
         IdX, IdY = np.meshgrid(np.arange(cutoff, length - cutoff) - length / 2, np.arange(cutoff, length - cutoff) - length / 2)
         IdX, IdY = np.cos(angle) * IdX + np.sin(angle) * IdY + length / 2, - np.sin(angle) * IdX + np.cos(angle) * IdY + length / 2
         IdX, IdY = np.minimum(np.maximum(IdX, 0), length - 1).astype(int), np.minimum(np.maximum(IdY, 0), length - 1 ).astype(int)
-        C = gaussian_filter((np.sign(chirality(M)) + 1) / 2, sigma=10)[IdY, IdX]
-        M = M[IdY, IdX];
+        C = gaussian_filter((np.tanh(chirality(M) * 100) + 1) / 2, sigma=10)[IdY, IdX]
+        S = (np.sin(spirality(M)) ** 2)[IdY, IdX]
+        M = M[IdY, IdX]
     else:
         M = M[cutoff:-cutoff, cutoff:-cutoff]
-        C = gaussian_filter((np.sign(chirality(M)) + 1) / 2, sigma=10)
+        C = gaussian_filter((np.atan(chirality(M) * 100) + 1) / 2, sigma=10)
+        S = gaussian_filter(np.sin(spirality(M)) ** 2, sigma=20)
 
     size = (density - cutoff / density) / 2
     extent = [-size, size, -size, size]
@@ -126,9 +141,20 @@ def draw_field(ax, M, mode: Literal['m_z', 'quiver', 'byside', 'chirality', 'nor
         A = cmap((M[:,:,-1] + 1)/4 + 0.5) 
         B = cmap(0.5 - (M[:,:,-1] + 1)/4)
         F = np.sign(M[:,:,-1]) * np.pow(np.abs(M[:,:,-1]), 1/3) * 0.1 + 0.9
-        
+
         return ax.imshow(A * C[:,:,None] * F[:,:, None] + (1 - C[:,:,None]) * B * F[:,:,None], cmap=cmap, vmin=-1, vmax=1, extent=extent)
     
+    if mode == 'spirality':
+        A = cmap((M[:,:,-1] + 1)/4 + 0.5) 
+        B = cmap(0.5 - (M[:,:,-1] + 1)/4)
+        F = np.sign(M[:,:,-1]) * np.pow(np.abs(M[:,:,-1]), 1/3) * 0.1 + 0.9
+        base = A * C[:,:,None] * F[:,:, None] + (1 - C[:,:,None]) * B * F[:,:,None]
+        E = cmap_chi((M[:,:,-1] + 1)/2) * F[:,:, None]
+        
+
+        return ax.imshow(base * (1 - S[:,:,None]) + E * S[:,:,None], cmap=cmap, vmin=-1, vmax=1, extent=extent)
+    
+
     if mode == 'rotation':
         m_z = M[:,:,-1]
         m_z_x = np.gradient(m_z, axis=1)
@@ -155,11 +181,10 @@ def animate_field(data, dir_name: str, show_result: bool = True, mode: Literal['
         # mx_my = np.linalg.cross(np.gradient(m, axis=0), np.gradient(m, axis=1))
         # v = np.sum(m * mx_my) / (4 * np.pi)
         # ax.text(0,1, f'{round(v, 4)}')
-    
+
     ani = animation.FuncAnimation(fig, update, repeat=True, frames=len(data) - 1, interval=50)
-    writergif = animation.PillowWriter(fps = 30, bitrate=-1, codec='libx264')
-    writergif.setup(fig, f"./skyrmion_system/{dir_name}/{dir_name}-{mode}.gif", dpi=300,)
-    ani.save(f"./skyrmion_system/{dir_name}/{dir_name}-{mode}.gif", writer=writergif, dpi="figure")
+    writer = animation.FFMpegWriter(fps=30)
+    ani.save(f"./{dir_name}/{mode}.mp4", writer=writer, dpi=200)
 
     if show_result:
-        os.system(f'code ./skyrmion_system/{dir_name}/{dir_name}-{mode}.gif')
+        os.system(f'code ./{dir_name}/{mode}.mp4')

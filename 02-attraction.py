@@ -21,13 +21,13 @@ def create_experiment() -> Experiment:
 
         eps=0.5,
         gamma=0,
-        beta=3,
+        beta=2,
         h=1,
 
         chi=1,
         eta=0,
-        R0=2.4480625523806787,
-        w0=0.878747540017559,
+        R0=1,
+        w0=0.745,
 
         skyrmion_to=(3, 0),
         field_to=(0, 0),
@@ -39,8 +39,9 @@ def main():
     builder = SystemBuilder()
     drive_parent = "02-attraction"
 
-    exp = create_experiment()
-    system, driver = builder.from_experiment(exp)
+    # exp = create_experiment()
+    # system, driver = builder.from_experiment(exp)
+    exp, system, driver = builder.from_directory(f"./{drive_parent}/skyrmion_system/drive-3", magnetization_index=-1)
     def run():
         return driver.drive(
             system,
