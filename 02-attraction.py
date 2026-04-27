@@ -41,7 +41,7 @@ def main():
 
     # exp = create_experiment()
     # system, driver = builder.from_experiment(exp)
-    exp, system, driver = builder.from_directory(f"./{drive_parent}/skyrmion_system/drive-3", magnetization_index=-1)
+    exp, system, driver = builder.from_directory(f"./{drive_parent}/skyrmion_system/drive-4", magnetization_index=-1)
     def run():
         return driver.drive(
             system,
@@ -49,7 +49,7 @@ def main():
             output_step=True,
             t=1,
             n=1000,
-            steps=5000,
+            steps=15000,
             n_threads=12,
         )
     info = run_experiment(run, exp, drive_parent=drive_parent, stop_at_omf_step=500000)

@@ -6,6 +6,8 @@ import scienceplots # type: ignore
 cmap = Colormap('colorcet:cet_cbtc2').to_mpl()
 cmap2 = Colormap([cmap(0.5), Color('lightcoral'), cmap(0.5), Color('lightsteelblue'), cmap(0.5)]).to_mpl()
 
+colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
 def apply():
     plt.rcdefaults()
     plt.style.use(['science', 'light'])

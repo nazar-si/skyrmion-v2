@@ -57,7 +57,7 @@ def chirality(M):
 def spirality(M):
     G = np.stack([np.gradient(M[:,:,2], axis=1), np.gradient(M[:,:,2], axis=0)])
     # normalized gradient in XY plane (d_x m_x, d_y m_y)
-    G = G / np.linalg.norm(G, axis=0, ord=2)[None,:,:]
+    G = G / np.clip(np.linalg.norm(G, axis=0, ord=2, keepdims=True), 1e-12, None)
     # $\chi$ is an angle of the magnetization in the plane perpendicular to it's gradient in XY plane  
     CHI = np.atan2(
         G[1] * M[:,:,0] - G[0] * M[:,:,1],
