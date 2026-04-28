@@ -182,7 +182,7 @@ def animate_field(data, dir_name: str, show_result: bool = True, mode: Literal['
         # v = np.sum(m * mx_my) / (4 * np.pi)
         # ax.text(0,1, f'{round(v, 4)}')
 
-    ani = animation.FuncAnimation(fig, update, repeat=True, frames=len(data) - 1, interval=50)
+    ani = animation.FuncAnimation(fig, update, repeat=True, frames=len(data), interval=50)
     writer = animation.FFMpegWriter(fps=30)
     ani.save(f"./{dir_name}/{mode}.mp4", writer=writer, dpi=200)
 

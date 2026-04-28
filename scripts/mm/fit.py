@@ -3,8 +3,9 @@ from typing import Literal
 import numpy as np
 from scripts.mm.experiment import Experiment
 import scipy.optimize as opt
+from scipy.interpolate import make_smoothing_spline
 
-def trajectory(data, experiment: Experiment, method: Literal['center', 'charge'] = 'center'):
+def trajectory(data, experiment: Experiment, method: Literal['center', 'charge'] = 'center', smooth=1e-11, interpolation=3):
     xs = np.array([])
     ys = np.array([])
     W = experiment.width / experiment.dx
@@ -24,6 +25,10 @@ def trajectory(data, experiment: Experiment, method: Literal['center', 'charge']
 
     xs = xs - experiment.vortex_to[0]
     ys = ys - experiment.vortex_to[1]
+    t = np.linspace(0, 1, len(xs))
+    t_fine = np.linspace(0, 1, len(xs) * interpolation)
+    xs, ys =  make_smoothing_spline(t,xs, lam=smooth)(t_fine), make_smoothing_spline(t,ys, lam=smooth)(t_fine)
+
     return xs, ys
 
 def skyrmion(params, X, Y):

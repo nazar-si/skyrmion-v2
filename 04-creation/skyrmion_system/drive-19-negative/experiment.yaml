@@ -1,0 +1,31 @@
+version: 1
+name: negative
+description: Check swing creation conditions
+driver: time
+width: 5
+height: 5
+dx: 0.025
+Ms: 1
+A: 1
+K: 1
+eps: 0.3
+gamma: 0
+beta: -9.0
+h: 1
+chi: 1
+eta: 0
+R0: 0
+w0: 0
+bc: xy
+damping: 0.05
+skyrmion_to:
+  - 0
+  - 0
+field_to:
+  - 0
+  - 0
+vortex_to:
+  - 0
+  - 0
+source_dir: ""
+source_file: ""

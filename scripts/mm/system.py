@@ -23,6 +23,69 @@ class SystemBuilder:
     # -----------------------
     # Fresh system from Experiment
     # -----------------------
+    def from_empty(self, exp: Experiment | None) -> tuple[mm.System, mc.TimeDriver]:
+        assert exp is not None, "Experiment object required"
+
+        A_ex = exp.A
+        K_an = exp.K
+        l_w = np.sqrt(A_ex / K_an) if K_an != 0 else 1
+
+        W = exp.width * l_w
+        H = exp.height * l_w
+        dL = exp.dx * l_w
+        Ms = exp.Ms * (1e5 if exp.driver == Driver.TIME else 1)
+        eps_0 = exp.eps
+        
+        beta = exp.beta * l_w ** 2
+        h = exp.h * l_w
+        alpha = exp.damping
+
+        D = np.sqrt(A_ex * K_an)
+
+        # --- mesh ---
+        p1 = (-W, -H, 0)
+        p2 = (W, H, dL)
+        cell = (dL, dL, dL)
+
+        region = df.Region(p1=p1, p2=p2)
+        mesh = df.Mesh(region=region, cell=cell, bc=exp.bc.value)
+
+        to = (
+            exp.field_to[0] * l_w,
+            exp.field_to[1] * l_w,
+        )
+
+        def EM_DMI(pos):
+            x, y, z = pos
+            r2 = (x - to[0]) ** 2 + (y - to[1]) ** 2
+            eps = eps_0 + beta * h / (r2 + h**2) ** (3 / 2)
+            return (0, 0, -2 * eps * D)
+
+        EM_field = df.Field(mesh, nvdim=3, value=EM_DMI)
+
+        def m_initial(pos):
+            return (0, 0, 1)
+
+
+        system = mm.System(name="skyrmion_system")
+        system.m = df.Field(mesh, nvdim=3, value=m_initial, norm=Ms)
+        system.energy = (
+            mm.Exchange(A=A_ex)
+            + mm.UniaxialAnisotropy(K=K_an, u=(0, 0, 1))
+            + mm.DMI(D=EM_field, crystalclass="Cnv_z")
+        )
+        system.dynamics = mm.Damping(alpha=alpha) + mm.Precession(gamma0=mm.consts.gamma0)
+
+        mc.runner.runner = mc.oommf.DockerOOMMFRunner(image="field/oommf:latest")
+        driver = mc.TimeDriver()
+
+        self.system = system
+        self.driver = driver
+        return system, driver
+    
+    # -----------------------
+    # Fresh system from Experiment
+    # -----------------------
     def from_experiment(self, exp: Experiment | None) -> tuple[mm.System, mc.TimeDriver]:
         assert exp is not None, "Experiment object required"
 
@@ -98,6 +161,85 @@ class SystemBuilder:
         self.system = system
         self.driver = driver
         return system, driver
+    
+    # -----------------------
+    # Fresh system from theta envelope
+    # -----------------------
+    def from_envelope(self, exp: Experiment | None, theta_envelope = lambda r: 2 * np.arctan(np.sinh(1) / np.sinh(r)) if r != 0 else np.pi, phi_envelope = lambda p: p) -> tuple[mm.System, mc.TimeDriver]:
+        assert exp is not None, "Experiment object required"
+
+        A_ex = exp.A
+        K_an = exp.K
+        l_w = np.sqrt(A_ex / K_an) if K_an != 0 else 1
+
+        W = exp.width * l_w
+        H = exp.height * l_w
+        dL = exp.dx * l_w
+        Ms = exp.Ms * (1e5 if exp.driver == Driver.TIME else 1)
+        eps_0 = exp.eps
+        chi = exp.chi
+        eta = exp.eta
+        R0 = exp.R0 * l_w
+        w0 = exp.w0 * l_w
+        
+        beta = exp.beta * l_w ** 2
+        h = exp.h * l_w
+        alpha = exp.damping
+
+        D = np.sqrt(A_ex * K_an)
+
+        # --- mesh ---
+        p1 = (-W, -H, 0)
+        p2 = (W, H, dL)
+        cell = (dL, dL, dL)
+
+        region = df.Region(p1=p1, p2=p2)
+        mesh = df.Mesh(region=region, cell=cell, bc=exp.bc.value)
+
+        to = (
+            exp.field_to[0] * l_w,
+            exp.field_to[1] * l_w,
+        )
+
+        skyrmion_to = (
+            exp.skyrmion_to[0] * l_w,
+            exp.skyrmion_to[1] * l_w,
+        )
+
+        def EM_DMI(pos):
+            x, y, z = pos
+            r2 = (x - to[0]) ** 2 + (y - to[1]) ** 2
+            eps = eps_0 + beta * h / (r2 + h**2) ** (3 / 2)
+            return (0, 0, -2 * eps * D)
+
+        EM_field = df.Field(mesh, nvdim=3, value=EM_DMI)
+
+        def m_initial(pos):
+            x, y, z = pos
+            r = np.sqrt((x - skyrmion_to[0])**2 + (y - skyrmion_to[1])**2)
+            theta = theta_envelope(r)
+            phi = phi_envelope(np.atan2(y - skyrmion_to[1], x - skyrmion_to[0]))
+            mx = np.sin(theta) * np.cos(phi + eta) 
+            my = np.sin(theta) * np.sin(phi + eta)
+            mz = np.cos(theta) 
+            return (mx, my, mz)
+
+
+        system = mm.System(name="skyrmion_system")
+        system.m = df.Field(mesh, nvdim=3, value=m_initial, norm=Ms)
+        system.energy = (
+            mm.Exchange(A=A_ex)
+            + mm.UniaxialAnisotropy(K=K_an, u=(0, 0, 1))
+            + mm.DMI(D=EM_field, crystalclass="Cnv_z")
+        )
+        system.dynamics = mm.Damping(alpha=alpha) + mm.Precession(gamma0=mm.consts.gamma0)
+
+        mc.runner.runner = mc.oommf.DockerOOMMFRunner(image="field/oommf:latest")
+        driver = mc.TimeDriver()
+
+        self.system = system
+        self.driver = driver
+        return system, driver
 
     # -----------------------
     # Load system from disk
@@ -108,6 +250,7 @@ class SystemBuilder:
         *,
         magnetization_index: int | None = -1,
         magnetization_chunk: int | list[int] | None = None,
+        override_exp: Experiment | None = None,
     ) -> tuple[Experiment, mm.System, mc.TimeDriver]:
         """
         Load `Experiment` + rebuild system + restore magnetization from a saved .omf.
@@ -130,7 +273,7 @@ class SystemBuilder:
         (experiment, system, driver)
         """
         directory = Path(directory).resolve()
-        exp = Experiment.load(directory)
+        exp = Experiment.load(directory) if override_exp is None else override_exp
         system, driver = self.from_experiment(exp)
 
         if magnetization_chunk is not None:
