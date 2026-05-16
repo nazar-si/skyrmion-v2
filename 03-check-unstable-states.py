@@ -14,8 +14,8 @@ def create_experiment() -> Experiment:
         name="beta=-5-unstable-check",
         description="Checking behavior of unstable solutions for beta=-5",
 
-        width=7,
-        height=7,
+        width=5,
+        height=5,
         dx=0.025,
 
         Ms=1,
@@ -26,10 +26,10 @@ def create_experiment() -> Experiment:
 
         eps=0.3,
         gamma=0,
-        beta=-5,
+        beta=-8.8,
         h=1,
 
-        chi=1,
+        chi=-1,
         eta=0,
         R0=1,
         w0=0.745,
@@ -47,7 +47,7 @@ def main():
     exp = create_experiment()
     problem = Problem(epsilon=exp.eps, beta=exp.beta, chi=exp.chi, height=exp.h, helicity=exp.chi, method='DOP853')
     answers = refined_search(problem, -np.pi/2 + 1e-3, np.pi/2 - 1e-3, 10000, 10, exclude_negative=False)
-    ans = answers[4]
+    ans = answers[3]
     # plt.plot(ans.r, ans.theta)
     # plt.xlim([0,6])
     # plt.show()
@@ -62,7 +62,7 @@ def main():
             output_step=True,
             t=1,
             n=1000,
-            steps=200,
+            steps=1000,
             n_threads=12,
         )
     info = run_experiment(run, exp, drive_parent=drive_parent, stop_at_omf_step=20000)

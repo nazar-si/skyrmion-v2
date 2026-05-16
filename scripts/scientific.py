@@ -1,4 +1,3 @@
-from IPython.display import set_matplotlib_formats
 from cmap import Color, Colormap
 import matplotlib.pyplot as plt 
 import scienceplots # type: ignore

@@ -54,14 +54,14 @@ def read_dir(dir_name: str, delete_files: bool = False, new_name = None, scaling
 def chirality(M):
     return np.gradient(M[:,:,2], axis=1) * M[:,:,0] + np.gradient(M[:,:,2], axis=0) * M[:,:,1]
 
-def spirality(M):
+def spirality(M, contrast = 1):
     G = np.stack([np.gradient(M[:,:,2], axis=1), np.gradient(M[:,:,2], axis=0)])
     # normalized gradient in XY plane (d_x m_x, d_y m_y)
     G = G / np.clip(np.linalg.norm(G, axis=0, ord=2, keepdims=True), 1e-12, None)
     # $\chi$ is an angle of the magnetization in the plane perpendicular to it's gradient in XY plane  
     CHI = np.atan2(
         G[1] * M[:,:,0] - G[0] * M[:,:,1],
-        M[:,:,2]
+        contrast * M[:,:,2]
     )
     
     return CHI
@@ -77,7 +77,7 @@ cmap_chi = Colormap([_cmap(0), Color('orchid'), _cmap(1)]).to_mpl()
 cmap2 = Colormap([cmap(0.5), Color('lightcoral'), cmap(0.5), Color('lightsteelblue'), cmap(0.5)]).to_mpl()
 # cmap2 = Colormap('colorcet:cet_c3').to_mpl()
 
-def draw_field(ax, M, mode: Literal['m_z', 'quiver', 'byside', 'chirality', 'normal', 'polar', 'spirality', 'rotation']='m_z', cutoff = 50, quiver_scale = 10, chirality_threshold = 0, rotate_to_average = False):
+def draw_field(ax, M, mode: Literal['m_z', 'quiver', 'byside', 'chirality', 'normal', 'polar', 'spirality', 'rotation']='m_z', cutoff = 1, quiver_scale = 10, chirality_threshold = 0, rotate_to_average = False, *, spirality_contrast = 1):
     length = M.shape[0]
     density = length * 0.025
     if (rotate_to_average):
@@ -90,14 +90,14 @@ def draw_field(ax, M, mode: Literal['m_z', 'quiver', 'byside', 'chirality', 'nor
         IdX, IdY = np.cos(angle) * IdX + np.sin(angle) * IdY + length / 2, - np.sin(angle) * IdX + np.cos(angle) * IdY + length / 2
         IdX, IdY = np.minimum(np.maximum(IdX, 0), length - 1).astype(int), np.minimum(np.maximum(IdY, 0), length - 1 ).astype(int)
         C = gaussian_filter((np.tanh(chirality(M) * 100) + 1) / 2, sigma=10)[IdY, IdX]
-        S = (np.sin(spirality(M)) ** 2)[IdY, IdX]
+        S = (np.sin(spirality(M, spirality_contrast)) ** 2)[IdY, IdX]
         M = M[IdY, IdX]
     else:
         M = M[cutoff:-cutoff, cutoff:-cutoff]
         C = gaussian_filter((np.atan(chirality(M) * 100) + 1) / 2, sigma=10)
-        S = gaussian_filter(np.sin(spirality(M)) ** 2, sigma=20)
+        S = gaussian_filter(np.sin(spirality(M, spirality_contrast)) ** 2, sigma=20)
 
-    size = (density - cutoff / density) / 2
+    size = (density - 2 * cutoff * 0.025) / 2
     extent = [-size, size, -size, size]
     ax.set_xticks([-5,0,5])
     ax.set_yticks([-5,0,5])
@@ -184,7 +184,7 @@ def animate_field(data, dir_name: str, show_result: bool = True, mode: Literal['
 
     ani = animation.FuncAnimation(fig, update, repeat=True, frames=len(data), interval=50)
     writer = animation.FFMpegWriter(fps=30)
-    ani.save(f"./{dir_name}/{mode}.mp4", writer=writer, dpi=200)
+    ani.save(f"./{dir_name}/c_{mode}.mp4", writer=writer, dpi=200)
 
     if show_result:
         os.system(f'code ./{dir_name}/{mode}.mp4')

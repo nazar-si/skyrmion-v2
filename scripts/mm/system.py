@@ -35,7 +35,7 @@ class SystemBuilder:
         dL = exp.dx * l_w
         Ms = exp.Ms * (1e5 if exp.driver == Driver.TIME else 1)
         eps_0 = exp.eps
-        
+
         beta = exp.beta * l_w ** 2
         h = exp.h * l_w
         alpha = exp.damping
