@@ -54,17 +54,43 @@ def read_dir(dir_name: str, delete_files: bool = False, new_name = None, scaling
 def chirality(M):
     return np.gradient(M[:,:,2], axis=1) * M[:,:,0] + np.gradient(M[:,:,2], axis=0) * M[:,:,1]
 
-def spirality(M, contrast = 1):
-    G = np.stack([np.gradient(M[:,:,2], axis=1), np.gradient(M[:,:,2], axis=0)])
-    # normalized gradient in XY plane (d_x m_x, d_y m_y)
-    G = G / np.clip(np.linalg.norm(G, axis=0, ord=2, keepdims=True), 1e-12, None)
-    # $\chi$ is an angle of the magnetization in the plane perpendicular to it's gradient in XY plane  
-    CHI = np.atan2(
-        G[1] * M[:,:,0] - G[0] * M[:,:,1],
-        contrast * M[:,:,2]
-    )
+# def spirality(M, contrast = 1):
+#     G = np.stack([np.gradient(M[:,:,2], axis=1), np.gradient(M[:,:,2], axis=0)])
+#     # normalized gradient in XY plane (d_x m_x, d_y m_y)
+#     G = G / np.clip(np.linalg.norm(G, axis=0, ord=2, keepdims=True), 1e-12, None)
+#     # $\chi$ is an angle of the magnetization in the plane perpendicular to it's gradient in XY plane  
+#     CHI = np.atan2(
+#         G[1] * M[:,:,0] - G[0] * M[:,:,1],
+#         contrast * M[:,:,2]
+#     )
     
-    return CHI
+#     return CHI
+
+def spirality(M, contrast=1):
+    mx = M[:, :, 0].copy()
+    my = M[:, :, 1].copy()
+    mz = M[:, :, 2]
+
+    # Gradient of m_z
+    gx = np.gradient(mz, axis=1)
+    gy = np.gradient(mz, axis=0)
+
+    # Normalize gradient
+    gnorm = np.sqrt(gx**2 + gy**2)
+    gx /= np.clip(gnorm, 1e-12, None)
+    gy /= np.clip(gnorm, 1e-12, None)
+
+    # Normalize in-plane magnetization
+    mnorm = np.sqrt(mx**2 + my**2)
+    mx /= np.clip(mnorm, 1e-12, None)
+    my /= np.clip(mnorm, 1e-12, None)
+
+    dot = gx * mx + gy * my
+    cross = gx * my - gy * mx
+
+    ETA = np.arctan2(cross, contrast * dot)
+
+    return ETA
 
 # Функция дает распределению цвет в зависимости от знака киральности (знака антисимметричного обмена)
 def chirality_signed_field(M, t = 0):
@@ -76,6 +102,34 @@ cmap = Colormap([_cmap(0), _cmap(0.25), _cmap(0.5), _cmap(0.75), _cmap(1)]).to_m
 cmap_chi = Colormap([_cmap(0), Color('orchid'), _cmap(1)]).to_mpl()
 cmap2 = Colormap([cmap(0.5), Color('lightcoral'), cmap(0.5), Color('lightsteelblue'), cmap(0.5)]).to_mpl()
 # cmap2 = Colormap('colorcet:cet_c3').to_mpl()
+
+def field_image(m, color: Literal['normal', 'chirality', 'spirality', 'm_z', 'm_x', 'm_y'] = 'normal', spirality_contrast = 1, normalize=False):
+    M = np.array(m)
+    if normalize:
+        M /= np.max(np.abs(M))
+    C = gaussian_filter((np.atan(chirality(M) * 100) + 1) / 2, sigma=10)
+    S = gaussian_filter(np.sin(spirality(M, spirality_contrast)) ** 2, sigma=20)
+
+    if color == 'normal':
+        return np.astype(255 * (M + 1) / 2, np.uint8)
+    if color == 'm_z':
+        return cmap2((M[:,:,2] + 1)/2)
+    if color == 'm_x':
+        return cmap2((M[:,:,0] + 1)/2)
+    if color == 'm_y':
+        return cmap2((M[:,:,1] + 1)/2)
+    if color == 'chirality':
+        A = cmap((M[:,:,-1] + 1)/4 + 0.5) 
+        B = cmap(0.5 - (M[:,:,-1] + 1)/4)
+        F = np.sign(M[:,:,-1]) * np.pow(np.abs(M[:,:,-1]), 1/3) * 0.1 + 0.9
+        return A * C[:,:,None] * F[:,:, None] + (1 - C[:,:,None]) * B * F[:,:,None]
+    if color == 'spirality':
+        A = cmap((M[:,:,-1] + 1)/4 + 0.5) 
+        B = cmap(0.5 - (M[:,:,-1] + 1)/4)
+        F = np.sign(M[:,:,-1]) * np.pow(np.abs(M[:,:,-1]), 1/3) * 0.1 + 0.9
+        base = A * C[:,:,None] * F[:,:, None] + (1 - C[:,:,None]) * B * F[:,:,None]
+        E = cmap_chi((M[:,:,-1] + 1)/2) * F[:,:, None]
+        return base * (1 - S[:,:,None]) + E * S[:,:,None]
 
 def draw_field(ax, M, mode: Literal['m_z', 'quiver', 'byside', 'chirality', 'normal', 'polar', 'spirality', 'rotation']='m_z', cutoff = 1, quiver_scale = 10, chirality_threshold = 0, rotate_to_average = False, *, spirality_contrast = 1):
     length = M.shape[0]

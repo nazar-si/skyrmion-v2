@@ -2,7 +2,7 @@ from typing import List, Literal, Optional, Tuple
 import numpy as np
 import matplotlib.pyplot as plt 
 from scipy.interpolate import CubicSpline, interp1d, Akima1DInterpolator #  type: ignore
-from scripts.ellipe import ellipe, ellipe_x # type: ignore
+from scripts.ellipe import ellipe, ellipe_x, ellipk # type: ignore
 from numpy.typing import NDArray
 from dataclasses import dataclass
 from scipy.integrate import solve_bvp, solve_ivp # type: ignore
@@ -11,6 +11,40 @@ from pathlib import Path
 import numba as nb # type: ignore
 from numbalsoda import lsoda_sig, lsoda, dop853 #type: ignore
 
+@nb.jit
+def pearl_br(r, a):
+    """
+    Radial component of the azimuthally averaged Pearl vortex field.
+
+    b_r = -Theta(r-a)/r
+    """
+    if r < a:
+        return 0.0
+
+    return -1.0 / r
+
+
+@nb.jit
+def pearl_bz(r, a):
+    """
+    Out-of-plane component of the azimuthally averaged Pearl vortex field.
+
+    b_z = -2 K(4ar/(a+r)^2) / [pi(a+r)]
+    """
+    if a == 0:
+        # Limiting case: K(0) = pi/2
+        return -1.0 / r
+
+    x = 4 * a * r / (a + r) ** 2
+
+    return -2.0 * ellipk(x) / (np.pi * (a + r))
+
+@nb.jit
+def magnetic_contribution(r, theta, gamma, distance_vortex):
+    br = pearl_br(r, distance_vortex)
+    bz = pearl_bz(r, distance_vortex)
+
+    return gamma * (bz * np.sin(theta) - br * np.cos(theta))
 
 @nb.jit
 def field(r, h, a):
@@ -75,19 +109,45 @@ class Interpolation:
 def rhs(t, u, du, p):
     """
         p[0] = epsilon
-        p[1] = alpha
+        p[1] = beta
         p[2] = height
         p[3] = distance
+        p[4] = gamma
+        p[5] = distance_vortex
     """
     inv_t = 1 / t
-    field_contribution = field(t, p[2], p[3]) * (1 - np.cos(u[0] * 2)) * inv_t + field_r(t, p[2], p[3])
+
+    # Electric field contribution
+    electric_contribution = (
+        field(t, p[2], p[3])
+        * (1 - np.cos(u[0] * 2))
+        * inv_t
+        + field_r(t, p[2], p[3])
+    )
+
+    # Averaged Pearl vortex magnetic field
+    br = pearl_br(t, p[5])
+    bz = pearl_bz(t, p[5])
+
+    magnetic_contribution = (
+        bz * np.sin(u[0])
+        - br * np.cos(u[0])
+    )
+
     du[0] = u[1]
-    du[1] = - u[1] * inv_t + 0.5 * (1 + 1 * inv_t ** 2) * np.sin(u[0] * 2) - 2 * p[0] * np.sin(u[0]) ** 2 * inv_t - p[1] * field_contribution
+
+    du[1] = (
+        -u[1] * inv_t
+        + 0.5 * (1 + inv_t ** 2) * np.sin(u[0] * 2)
+        - 2 * p[0] * np.sin(u[0]) ** 2 * inv_t
+        - p[1] * electric_contribution
+        - p[4] * magnetic_contribution
+    )
 
 eq_address = rhs.address # address to ODE function
 
 @nb.jit
-def compiled_shooting(r: NDArray, chi: float, epsilon: float, alpha: float, height: float, distance: float, max_iterations=100, y_prime=0, speed=2, upper_boundary = np.inf, lower_boundary = -np.inf, _break_on_up = False, _break_on_down = False, _negative=False, method: MethodIVP = 'LSODA'):
+def compiled_shooting(r: NDArray, chi: float, epsilon: float, alpha: float, height: float, distance: float, gamma: float, distance_vortex: float, max_iterations=100, y_prime=0, speed=2, upper_boundary = np.inf, lower_boundary = -np.inf, _break_on_up = False, _break_on_down = False, _negative=False, method: MethodIVP = 'LSODA'):
         y_r = y_prime
         lower_bound_found = lower_boundary != -np.inf
         upper_bound_found = upper_boundary != np.inf
@@ -96,7 +156,7 @@ def compiled_shooting(r: NDArray, chi: float, epsilon: float, alpha: float, heig
         found_solution = np.zeros((2, r.shape[0]))
 
         for i in range(max_iterations):
-            solution = (lsoda(eq_address, np.array([chi * np.pi, y_r]), r, np.array([epsilon, alpha, height, distance])) if method == 'LSODA' else dop853(eq_address, np.array([chi * np.pi, y_r]), r, np.array([epsilon, alpha, height, distance])))[0].T
+            solution = (lsoda(eq_address, np.array([chi * np.pi, y_r]), r, np.array([epsilon, alpha, height, distance, gamma, distance_vortex])) if method == 'LSODA' else dop853(eq_address, np.array([chi * np.pi, y_r]), r, np.array([epsilon, alpha, height, distance, gamma, distance_vortex])))[0].T
             value = solution[0][-1]
             if (np.abs(value) < 1e-3 or upper_bound == lower_bound):
                 found_solution = solution
@@ -127,10 +187,10 @@ def compiled_shooting(r: NDArray, chi: float, epsilon: float, alpha: float, heig
         return found_solution
 
 @nb.jit()
-def compiled_probe_shooting(r: NDArray, chi: float, epsilon: float, alpha: float, height: float, distance: float, search_points = 1000, search_intervals=10, refinement_iterations=100, method: MethodIVP = 'LSODA'):
+def compiled_probe_shooting(r: NDArray, chi: float, epsilon: float, alpha: float, height: float, distance: float, gamma: float, distance_vortex: float, search_points = 1000, search_intervals=10, refinement_iterations=100, method: MethodIVP = 'LSODA'):
         
-        left_boundary = compiled_shooting(r, chi, epsilon, alpha, height, max_iterations=300, y_prime=-1e5, speed=5, _break_on_up=True, method=method)
-        right_boundary = compiled_shooting(r, chi, epsilon, alpha, height, max_iterations=300, y_prime=1e5, speed=5, _break_on_down=True, method=method)
+        left_boundary = compiled_shooting(r, chi, epsilon, alpha, height, distance, gamma, distance_vortex, max_iterations=300, y_prime=-1e5, speed=5, _break_on_up=True, method=method)
+        right_boundary = compiled_shooting(r, chi, epsilon, alpha, height, distance, gamma, distance_vortex, max_iterations=300, y_prime=1e5, speed=5, _break_on_down=True, method=method)
         right_most = right_boundary[1,0]
         left_most = left_boundary[1,0]
         variation = np.abs(right_most - left_most) / 2
@@ -142,19 +202,19 @@ def compiled_probe_shooting(r: NDArray, chi: float, epsilon: float, alpha: float
         if (method == 'LSODA'):
             for i in range(1, intervals.shape[0]):
                 interval_initials = np.linspace(intervals[i-1], intervals[i], search_points // search_intervals ** 2 )[1:]
-                interval_ends = np.array([lsoda(eq_address, np.array([chi * np.pi, initial]), r, np.array([epsilon, alpha, height, distance]))[0][-1,0] for initial in interval_initials])
+                interval_ends = np.array([lsoda(eq_address, np.array([chi * np.pi, initial]), r, np.array([epsilon, alpha, height, distance, gamma, distance_vortex]))[0][-1,0] for initial in interval_initials])
                 if (np.sign(np.max(interval_ends)) != np.sign(np.min(interval_ends)) or np.var(interval_ends) > np.mean(np.abs(interval_ends))):
                     interval_initials = np.linspace(intervals[i-1], intervals[i], search_points // search_intervals)[1:]
-                    interval_ends = np.array([lsoda(eq_address, np.array([chi * np.pi, initial]), r, np.array([epsilon, alpha, height, distance]))[0][-1,0] for initial in interval_initials])
+                    interval_ends = np.array([lsoda(eq_address, np.array([chi * np.pi, initial]), r, np.array([epsilon, alpha, height, distance, gamma, distance_vortex]))[0][-1,0] for initial in interval_initials])
                 initials = np.hstack((initials, interval_initials))
                 ends = np.hstack((ends, interval_ends))
         if (method == 'DOP853'):
             for i in range(1, intervals.shape[0]):
                 interval_initials = np.linspace(intervals[i-1], intervals[i], search_points // search_intervals ** 2 )[1:]
-                interval_ends = np.array([dop853(eq_address, np.array([chi * np.pi, initial]), r, np.array([epsilon, alpha, height, distance]))[0][-1,0] for initial in interval_initials])
+                interval_ends = np.array([dop853(eq_address, np.array([chi * np.pi, initial]), r, np.array([epsilon, alpha, height, distance, gamma, distance_vortex]))[0][-1,0] for initial in interval_initials])
                 if (np.sign(np.max(interval_ends)) != np.sign(np.min(interval_ends)) or np.var(interval_ends) > np.mean(np.abs(interval_ends))):
                     interval_initials = np.linspace(intervals[i-1], intervals[i], search_points // search_intervals)[1:]
-                    interval_ends = np.array([dop853(eq_address, np.array([chi * np.pi, initial]), r, np.array([epsilon, alpha, height, distance]))[0][-1,0] for initial in interval_initials])
+                    interval_ends = np.array([dop853(eq_address, np.array([chi * np.pi, initial]), r, np.array([epsilon, alpha, height, distance, gamma, distance_vortex]))[0][-1,0] for initial in interval_initials])
                 initials = np.hstack((initials, interval_initials))
                 ends = np.hstack((ends, interval_ends))
         initials = initials[1:]
@@ -176,6 +236,8 @@ def compiled_probe_shooting(r: NDArray, chi: float, epsilon: float, alpha: float
                 alpha=alpha,
                 height=height,
                 distance=distance,
+                gamma=gamma,
+                distance_vortex=distance_vortex,
                 max_iterations=refinement_iterations,
                 y_prime=starts[i], 
                 speed=0,
@@ -189,18 +251,18 @@ def compiled_probe_shooting(r: NDArray, chi: float, epsilon: float, alpha: float
         return answers
 
 @nb.jit
-def range_shooting(r: NDArray, chi: float, epsilon: float, alpha: float, height: float, distance: float, start: float, end: float, count: int, method: MethodIVP = 'LSODA'):
+def range_shooting(r: NDArray, chi: float, epsilon: float, alpha: float, height: float, distance: float, gamma: float, distance_vortex: float, start: float, end: float, count: int, method: MethodIVP = 'LSODA'):
     starts = np.linspace(start, end, count)
     if (method == 'LSODA'):
-        return np.array([lsoda(eq_address, np.array([chi * np.pi, start]), r, np.array([epsilon, alpha, height, distance]))[0][-1,0] for start in starts])
-    return np.array([dop853(eq_address, np.array([chi * np.pi, start]), r, np.array([epsilon, alpha, height, distance]))[0][-1,0] for start in starts])
+        return np.array([lsoda(eq_address, np.array([chi * np.pi, start]), r, np.array([epsilon, alpha, height, distance, gamma, distance_vortex]))[0][-1,0] for start in starts])
+    return np.array([dop853(eq_address, np.array([chi * np.pi, start]), r, np.array([epsilon, alpha, height, distance, gamma, distance_vortex]))[0][-1,0] for start in starts])
 
 @nb.jit
-def angle_range_shooting(r: NDArray, chi: float, epsilon: float, alpha: float, height: float, distance: float, start: float, end: float, count: int, method: MethodIVP = 'LSODA'):
+def angle_range_shooting(r: NDArray, chi: float, epsilon: float, alpha: float, height: float, distance: float, gamma: float, distance_vortex: float, start: float, end: float, count: int, method: MethodIVP = 'LSODA'):
     starts = np.linspace(start, end, count)
     if (method == 'LSODA'):
-        return np.array([lsoda(eq_address, np.array([chi * np.pi, np.tan(start)]), r, np.array([epsilon, alpha, height, distance]))[0][-1,0] for start in starts])
-    return np.array([dop853(eq_address, np.array([chi * np.pi, np.tan(start)]), r, np.array([epsilon, alpha, height, distance]))[0][-1,0] for start in starts])
+        return np.array([lsoda(eq_address, np.array([chi * np.pi, np.tan(start)]), r, np.array([epsilon, alpha, height, distance, gamma, distance_vortex]))[0][-1,0] for start in starts])
+    return np.array([dop853(eq_address, np.array([chi * np.pi, np.tan(start)]), r, np.array([epsilon, alpha, height, distance, gamma, distance_vortex]))[0][-1,0] for start in starts])
 
 
 @nb.jit
@@ -213,7 +275,7 @@ def smooth_R(r: NDArray, theta: NDArray, chi: float, v: float):
 
 @dataclass
 class Problem:
-    """Creates skyrmion problem in electric field with defined parameters"""
+    """Creates skyrmion problem in electric and Pearl vortex magnetic fields"""
     epsilon: float
     beta: float | NDArray | list = 0
     chi: float = 1
@@ -224,13 +286,41 @@ class Problem:
     end: float = 30
     points: float = 1000
     distance: float | NDArray | list = 0
-
+    gamma: float = 0
+    distance_vortex: float = 0
     tolerance: float = 1e-3
 
+    # def second_derivative(self, r: NDArray | float, y: NDArray):
+    #     inv_r = 1 / r
+    #     field_contribution = field(r, self.height) * (1 - np.cos(y[0] * 2)) * inv_r + field_r(r, self.height)
+    #     return - y[1] * inv_r + 0.5 * (1 + 1 * inv_r ** 2) * np.sin(y[0] * 2) - 2 * self.epsilon * np.sin(y[0]) ** 2 * inv_r + self.beta * field_contribution
     def second_derivative(self, r: NDArray | float, y: NDArray):
         inv_r = 1 / r
-        field_contribution = field(r, self.height) * (1 - np.cos(y[0] * 2)) * inv_r + field_r(r, self.height)
-        return - y[1] * inv_r + 0.5 * (1 + 1 * inv_r ** 2) * np.sin(y[0] * 2) - 2 * self.epsilon * np.sin(y[0]) ** 2 * inv_r + self.beta * field_contribution
+
+        # Electric field contribution
+        field_contribution = (
+            field(r, self.height, self.distance)
+            * (1 - np.cos(y[0] * 2))
+            * inv_r
+            + field_r(r, self.height, self.distance)
+        )
+
+        # Pearl vortex magnetic field contribution
+        br = pearl_br(r, self.distance_vortex)
+        bz = pearl_bz(r, self.distance_vortex)
+
+        magnetic_contribution = (
+            bz * np.sin(y[0])
+            - br * np.cos(y[0])
+        )
+
+        return (
+            -y[1] * inv_r
+            + 0.5 * (1 + inv_r ** 2) * np.sin(y[0] * 2)
+            - 2 * self.epsilon * np.sin(y[0]) ** 2 * inv_r
+            + self.beta * field_contribution
+            + self.gamma * magnetic_contribution
+        )
 
     def equations(self, r: float | NDArray, y: NDArray) -> NDArray:
         return np.array((
@@ -271,7 +361,7 @@ class Problem:
         return solution[0], solution[1]
     
     def shooting(self, r: NDArray, max_iterations=100, y_prime=0, speed=2, upper_boundary = np.inf, lower_boundary = -np.inf, break_on: BreakOn | None = None, _negative=False) -> AnswerShooting:
-        solution = compiled_shooting(r=r, chi=self.chi, epsilon=self.epsilon, alpha=self.beta, height=self.height, distance=self.distance, max_iterations=max_iterations, y_prime=y_prime, speed=speed, upper_boundary=upper_boundary, lower_boundary=lower_boundary, _break_on_up=break_on == 'HIGHER', _break_on_down=break_on == 'LOWER', _negative=_negative, method=self.method)
+        solution = compiled_shooting(r=r, chi=self.chi, epsilon=self.epsilon, alpha=self.beta, height=self.height, distance=self.distance, gamma=self.gamma, distance_vortex=self.distance_vortex, max_iterations=max_iterations, y_prime=y_prime, speed=speed, upper_boundary=upper_boundary, lower_boundary=lower_boundary, _break_on_up=break_on == 'HIGHER', _break_on_down=break_on == 'LOWER', _negative=_negative, method=self.method)
 
         return AnswerShooting(r, solution[0], solution[1])
     
@@ -326,6 +416,20 @@ class Problem:
             answers.append(ans)
         return answers
     
+    def magnetic_energy_density(
+        self,
+        r: NDArray,
+        theta: NDArray,
+        spirality = 1
+    ):
+        br = np.vectorize(pearl_br)(r, self.distance_vortex)
+        bz = np.vectorize(pearl_bz)(r, self.distance_vortex)
+
+        return self.gamma * (
+            -bz * np.cos(theta)
+            -br * np.sin(theta) * spirality
+        )
+
     def field_energy_density(self, r: NDArray, theta: NDArray, theta_r: NDArray):
         if (type(self.distance) == list):
             density = ( 2 * r * theta_r + np.sin(2 * theta))
@@ -338,11 +442,17 @@ class Problem:
 
     def energy_density(self, r: NDArray, theta: NDArray, theta_r: NDArray):
         field_density = self.field_energy_density(r, theta, theta_r)
-        return r * theta_r ** 2 + (1 / r + r) * np.sin(theta) ** 2 + field_density;
+        magnetic_density = self.magnetic_energy_density(r, theta)
+        return (
+            r * theta_r ** 2
+            + (1 / r + r) * np.sin(theta) ** 2
+            + field_density
+            + r * magnetic_density
+        )
      
     def field_energy(self, r: NDArray, theta: NDArray, theta_r: NDArray):
         energy_density = self.field_energy_density(r, theta, theta_r)
-        return np.pi * np.diff(r) @ (np.copy(energy_density[:-1]) + energy_density[1:]) 
+        return np.pi * np.diff(r) @ (np.copy(energy_density[:-1]) + energy_density[1:])
 
     def free_energy(self, r: NDArray, theta: NDArray, theta_r: NDArray):
         energy_density = self.energy_density(r, theta, theta_r)
@@ -378,9 +488,9 @@ class Problem:
         return ans
     
     def range_shooting(self, r: NDArray, start: float, end:float, count: int):
-        return np.linspace(np.tan(start), np.tan(end), count), range_shooting(r, self.chi, self.epsilon, self.beta, self.height, self.distance, np.tan(start), np.tan(end), count, self.method)
+        return np.linspace(np.tan(start), np.tan(end), count), range_shooting(r, self.chi, self.epsilon, self.beta, self.height, self.distance, self.gamma, self.distance_vortex, np.tan(start), np.tan(end), count, self.method)
     def angle_range_shooting(self, r: NDArray, start: float, end:float, count: int):
-        return np.linspace(start, end, count), angle_range_shooting(r, self.chi, self.epsilon, self.beta, self.height, self.distance, start, end, count, self.method)
+        return np.linspace(start, end, count), angle_range_shooting(r, self.chi, self.epsilon, self.beta, self.height, self.distance, self.gamma, self.distance_vortex, start, end, count, self.method)
     
     def interpolate(self, ans: AnswerShooting) -> Interpolation:
         theta_interpolated = Akima1DInterpolator(np.concatenate(([0], ans.r)), np.concatenate(([np.pi * self.chi], ans.theta)), extrapolate=True)
@@ -400,7 +510,7 @@ class LinearProblem(Problem):
 
     @staticmethod
     def from_problem(problem: Problem):
-        return LinearProblem(problem.epsilon, problem.alpha, 0, problem.height, problem.method, problem.start, problem.end, problem.points, problem.tolerance)
+        return LinearProblem(problem.epsilon, problem.beta, 0, problem.height, problem.helicity, problem.method, problem.start, problem.end, problem.points, problem.distance, problem.gamma, problem.distance_vortex, problem.tolerance)
 
     def second_derivative(self, r: NDArray | float, y: NDArray):
         inv_r = 1 / r
@@ -409,7 +519,7 @@ class LinearProblem(Problem):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
-    problem = Problem(0.5, alpha=-0.1, distance=0)
+    problem = Problem(0.5, beta=-0.1, distance=0)
     solutions = problem.probe_shooting(problem.r)
     print(len(solutions))
     ans = solutions[0]

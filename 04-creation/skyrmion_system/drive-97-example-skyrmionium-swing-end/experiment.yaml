@@ -1,0 +1,31 @@
+version: 1
+name: drive-95-example-skyrmionium-swing-end
+description: Check swing creation conditions
+driver: time
+width: 7.0
+height: 7.0
+dx: 0.025
+Ms: 1
+A: 1
+K: 1
+eps: 0.3
+gamma: 0
+beta: 8.0
+h: 1
+chi: 1
+eta: 0
+R0: 0
+w0: 0
+bc: xy
+damping: 0.05
+skyrmion_to:
+  - 0
+  - 0
+field_to:
+  - 0
+  - 0
+vortex_to:
+  - 0
+  - 0
+source_dir: /Users/nazarsi/Desktop/science/skyrmions-v2/04-creation/skyrmion_system/drive-96-drive-95-example-skyrmionium-swing-start
+source_file: /Users/nazarsi/Desktop/science/skyrmions-v2/04-creation/skyrmion_system/drive-96-drive-95-example-skyrmionium-swing-start/skyrmion_system-Oxs_TimeDriver-Magnetization-0000000-0003000.omf

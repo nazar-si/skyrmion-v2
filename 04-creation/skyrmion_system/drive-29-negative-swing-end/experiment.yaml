@@ -19,13 +19,13 @@ w0: 0
 bc: xy
 damping: 0.05
 skyrmion_to:
-- 0
-- 0
+  - 0
+  - 0
 field_to:
-- 0
-- 0
+  - 0
+  - 0
 vortex_to:
-- 0
-- 0
+  - 0
+  - 0
 source_dir: /Users/nazarsi/Desktop/science/skyrmions-v2/04-creation/skyrmion_system/drive-28-negative-swing-start
 source_file: /Users/nazarsi/Desktop/science/skyrmions-v2/04-creation/skyrmion_system/drive-28-negative-swing-start/skyrmion_system-Oxs_TimeDriver-Magnetization-0000000-0002000.omf

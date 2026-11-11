@@ -201,11 +201,13 @@ class Compilation:
     betas: NDArray
     solutions: list[AnswerShooting]
 
-    def __init__(self, distances = np.array([]), radii = np.array([]), energies = np.array([]), betas=np.array([]), solutions = []):
+    def __init__(self, distances = np.array([]), radii = np.array([]), energies = np.array([]), betas=np.array([]), gammas = np.array([]), distances_vortex=np.array([]), solutions = []):
         self.distances = distances
         self.radii = radii
         self.energies = energies
         self.betas = betas
+        self.distances_vortex = distances_vortex
+        self.gammas = gammas
         self.solutions = [*solutions]
 
     def add(self, distance, radius, energy, beta = 0, solution: AnswerShooting = None):
@@ -217,27 +219,37 @@ class Compilation:
 
     def add_solution(self, problem: Problem, solution: AnswerShooting = None):
         self.distances = np.append(self.distances, problem.distance)
+        self.distances_vortex = np.append(self.distances_vortex, problem.distance_vortex)
         self.radii = np.append(self.radii, problem.answer_R(solution))
         self.energies = np.append(self.energies, problem.answer_energy(solution))
         self.betas = np.append(self.betas, problem.beta)
+        self.gammas = np.append(self.gammas, problem.gamma)
         self.solutions.append(solution)
 
     def clear(self):
         self.distances = np.array([])
+        self.distances_vortex = np.array([])
         self.radii = np.array([])
         self.energies = np.array([])
         self.betas = np.array([])
+        self.gammas = np.array([])
         self.solutions = []
 
-    def branches(self, eps=0.1, min_samples=5, by = 'radius'):
+    def branches(self, eps=0.1, min_samples=5, by = 'radius', of = 'tip'):
         if (self.distances.shape[0] == 0):
             return []
         if by == 'radius':
-            branches = separate_branches(self.distances, self.radii, eps, min_samples)
+            if of == 'tip':
+                branches = separate_branches(self.distances, self.radii, eps, min_samples)
+            else:
+                branches = separate_branches(self.distances_vortex, self.radii, eps, min_samples)
         else:
-            branches = separate_branches(self.betas, self.radii, eps, min_samples)
+            if of == 'tip':
+                branches = separate_branches(self.betas, self.radii, eps, min_samples)
+            else:
+                branches = separate_branches(self.gammas, self.radii, eps, min_samples)
 
-        return [Compilation(self.distances[branch], self.radii[branch], self.energies[branch], self.betas[branch]) for branch in branches]
+        return [Compilation(self.distances[branch], self.radii[branch], self.energies[branch], self.betas[branch], self.gammas[branch], self.distances_vortex[branch]) for branch in branches]
 
     def filter(self, r=None, beta=None):
 
@@ -267,6 +279,26 @@ def ranged_search(beta, count=10, epsilon=0.3, chi=[1,-1], problem = None, dista
 
     for distance in tqdm(distances):
         problem.distance = distance
+        for i, c in enumerate(chi):
+            problem.chi = c
+            solutions = refined_search(problem, -np.pi/ 2 + eps, np.pi/ 2 - eps, count, 100, exclude_negative=not negative, only_negative=negative and (not both_negative))
+            for solution in solutions:
+                if (problem.answer_R(solution) > 0.03):
+                    chi_buckets[i].add_solution(problem, solution)
+    return chi_buckets
+
+def ranged_vortex_search(gamma, count=10, epsilon=0.3, chi=[1,-1], problem = None, distances=distances, negative=False, both_negative=False):
+    chi_buckets = [Compilation() for c in chi]
+
+    if (problem is None):
+        problem = Problem(epsilon=epsilon, beta=0, distance=0, gamma=gamma,height = 1, chi=1, method='DOP853')
+    else:
+        problem.epsilon = epsilon
+        problem.gamma = gamma
+        problem.height= 1
+
+    for distance in tqdm(distances):
+        problem.distance_vortex = distance
         for i, c in enumerate(chi):
             problem.chi = c
             solutions = refined_search(problem, -np.pi/ 2 + eps, np.pi/ 2 - eps, count, 100, exclude_negative=not negative, only_negative=negative and (not both_negative))
@@ -325,6 +357,7 @@ def ring_ansatz_search(beta, epsilon=0.3, distances=distances):
 
 class Search:
     ranged = ranged_search
+    ranged_vortex = ranged_vortex_search
     
     def ranged_beta(betas, count=10, epsilon=0.3, chi=[1,-1], problem = None, distance = 0, negative=False, both_negative=False):
         chi_buckets = [Compilation() for c in chi]

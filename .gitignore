@@ -10,3 +10,9 @@ skyrmion_system.odt
 skyrmion_system.restart
 m0.omf
 dmi_D.ovf
+zeeman_H.ovf
+magnetization.npy
+*.gif
+*.webp
+*.mp4
+data.h5

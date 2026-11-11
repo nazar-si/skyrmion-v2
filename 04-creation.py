@@ -16,18 +16,22 @@ parser.add_argument("--frame", type=int, help="From which frame to start if --fr
 parser.add_argument("--count", type=int, help="Number of frames to model")
 parser.add_argument("--step", type=int, help="Number of steps between MM snapshots")
 parser.add_argument("--name", type=str, help="Prefix for exact experiment name")
+parser.add_argument("--size", type=float, help="Size of a system")
+parser.add_argument("--dmi", type=float, help="DMI")
 parser.add_argument("-r", '--regular', action='store_true', help="Start in mode without swinging")
 parser.add_argument("beta", type=float, help="Field strength")
 
 
 def create_experiment(args) -> Experiment:
     beta = args.beta
+    size = args.size if args.size else 5
+    epsilon = args.dmi if args.dmi else 0.3
     return Experiment(
         name= args.name + (("-swing-end" if args.dir else "-swing-start") if not args.regular else ""),
         description="Check swing creation conditions",
 
-        width=5,
-        height=5,
+        width=size,
+        height=size,
         dx=0.025,
 
         Ms=1,
@@ -36,7 +40,7 @@ def create_experiment(args) -> Experiment:
         damping=0.05,
         bc=BC.PERIODIC,
 
-        eps=0.3,
+        eps=epsilon,
         gamma=0,
         beta=beta if args.dir or args.regular else -beta,
         h=1,
