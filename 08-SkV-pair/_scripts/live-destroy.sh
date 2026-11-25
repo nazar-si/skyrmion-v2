@@ -1,0 +1,18 @@
+.venv/bin/python 08-SkV-pair.py \
+  --name live-destroy \
+  --device mps \
+  --half-width 5 \
+  --half-height 5 \
+  --cell-size 0.1 \
+  --skyrmion-position 0.25 0 \
+  --vortex-position -2 0 \
+  --tip-position 0 0 \
+  --gamma 0.15 \
+  --beta -1 \
+  --epsilon 0.45 \
+  --radius 0.7 \
+  --delta 0.8 \
+  --dt 1e-11 \
+  --steps 20000 \
+  --stride 1 \
+  --preview

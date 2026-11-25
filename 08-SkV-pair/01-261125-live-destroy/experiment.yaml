@@ -1,0 +1,66 @@
+version: 2
+name: live-destroy
+description: ''
+backend: magnum
+driver: time
+width: 5.0
+height: 5.0
+dx: 0.1
+Ms: 100000.0
+A: 1.0e-11
+K: 1000.0
+eps: 0.45
+gamma: 0.15
+beta: -1.0
+h: 1.0
+chi: 1.0
+eta: 0.0
+R0: 0.7
+w0: 0.8
+bc: xy
+damping: 0.1
+skyrmion_to:
+- 0.25
+- 0.0
+field_to:
+- 0.0
+- 0.0
+vortex_to:
+- -2.0
+- 0.0
+dt: 1.0e-11
+steps: 20000
+stride: 1
+device: mps
+phi0: 2.067833848e-15
+vortex_sigma: 2.0e-15
+superconductor_thickness: 1.0e-08
+vortex_polarity: -1
+source_dir: ''
+source_file: ''
+source_step: null
+source_time: null
+status: interrupted
+completed_step: 348
+completed_time: 3.480000065891886e-09
+derived_si:
+  domain_wall_length_m: 1.0e-07
+  dmi_scale_j_per_m2: 0.0001
+  pearl_length_m: 5.485099640032249e-07
+  domain_half_width_m: 5.0e-07
+  domain_half_height_m: 5.0e-07
+  cell_size_m: 1.0e-08
+  skyrmion_position_m:
+  - 2.5e-08
+  - 0.0
+  vortex_position_m:
+  - -2.0e-07
+  - 0.0
+  electric_tip_position_m:
+  - 0.0
+  - 0.0
+  electric_tip_height_m: 1.0e-07
+  skyrmion_radius_m: 6.999999999999999e-08
+  skyrmion_delta_m: 8.0e-08
+  uniform_interface_dmi_j_per_m2: 9.0e-05
+  nonuniform_dmi_prefactor_j_m: -1.9999999999999998e-25
