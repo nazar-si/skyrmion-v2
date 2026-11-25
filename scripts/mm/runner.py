@@ -3,11 +3,15 @@ import re
 import signal
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from threading import Event, Lock, Thread
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from scripts.mm.experiment import Experiment
+
+if TYPE_CHECKING:
+    from scripts.mm.magnum import MagnumSimulation
 
 
 LOCK_FILE_NAME = ".experiment_lock"
@@ -286,4 +290,176 @@ def run_experiment(
         "drive_dir": str(drive_dir) if drive_dir is not None else None,
         "final_dir": str(final_dir) if final_dir is not None else None,
         "stopped_container_id": stopped_container_id,
+    }
+
+
+def create_magnum_run_directory(
+    output_root: str | Path,
+    experiment: Experiment,
+    *,
+    now: datetime | None = None,
+) -> Path:
+    """Create ``NN-YYMMDD-name`` without OOMMF's nested drive directories."""
+    root = Path(output_root)
+    root.mkdir(parents=True, exist_ok=True)
+    numbers: list[int] = []
+    for path in root.iterdir():
+        if not path.is_dir():
+            continue
+        match = re.match(r"^(\d+)-", path.name)
+        if match:
+            numbers.append(int(match.group(1)))
+
+    number = max(numbers, default=0) + 1
+    date = (now or datetime.now()).strftime("%y%m%d")
+    slug = experiment.slug or "experiment"
+    while True:
+        target = root / f"{number:02d}-{date}-{slug}"
+        try:
+            target.mkdir()
+        except FileExistsError:
+            number += 1
+            continue
+        return target
+
+
+class _LivePreview:
+    """Small interactive Matplotlib window, imported only when requested."""
+
+    def __init__(self, simulation: "MagnumSimulation") -> None:
+        import matplotlib.pyplot as plt
+
+        from scripts.read_field import field_image
+
+        self._plt = plt
+        self._field_image = field_image
+        self._lw = simulation.experiment.domain_wall_length
+        self._extent = [
+            -simulation.experiment.width,
+            simulation.experiment.width,
+            -simulation.experiment.height,
+            simulation.experiment.height,
+        ]
+        plt.ion()
+        self._fig, self._ax = plt.subplots()
+        magnetization = simulation.magnetization_for_storage()
+        colors = self._colors(magnetization)
+        self._image = self._ax.imshow(colors, extent=self._extent, origin="lower")
+        position = simulation.vortex_position() / self._lw
+        self._marker = self._ax.scatter([position[0]], [position[1]], s=12, color="black")
+        self._title = self._ax.set_title("")
+        self._ax.set_xlabel(r"$x/l_w$")
+        self._ax.set_ylabel(r"$y/l_w$")
+        plt.show(block=False)
+
+    def _colors(self, magnetization):
+        import numpy as np
+
+        return np.clip(self._field_image(magnetization, color="spirality"), 0, 1)
+
+    def update(self, simulation: "MagnumSimulation", step: int) -> None:
+        import numpy as np
+
+        self._image.set_data(self._colors(simulation.magnetization_for_storage()))
+        position = simulation.vortex_position() / self._lw
+        self._marker.set_offsets(np.asarray([position]))
+        self._title.set_text(f"Step {step} · t = {simulation.time() * 1e9:.3f} ns")
+        self._fig.canvas.draw_idle()
+        self._fig.canvas.flush_events()
+        self._plt.pause(0.001)
+
+    def close(self) -> None:
+        self._plt.ioff()
+
+
+def run_magnum_experiment(
+    simulation: "MagnumSimulation",
+    output_root: str | Path,
+    *,
+    preview: bool = False,
+) -> dict[str, Any]:
+    """Run and incrementally save a coupled Magnum skyrmion-vortex model."""
+    import logging
+
+    import magnumnp as mp
+    from tqdm import tqdm
+
+    from scripts.mm.compression import FILE_NAME, H5TrajectoryWriter
+
+    experiment = simulation.experiment
+    # A per-step Magnum INFO message fights with tqdm in a terminal. Warnings and
+    # errors remain visible, while tqdm supplies the progress indication.
+    mp.logging.set_log_level(logging.WARNING)
+    run_dir = create_magnum_run_directory(output_root, experiment)
+    data_path = run_dir / FILE_NAME
+    experiment.status = "running"
+    experiment.completed_step = simulation.start_step
+    experiment.completed_time = simulation.time()
+    experiment.save(run_dir)
+
+    initial_m = simulation.magnetization_for_storage()
+    writer = H5TrajectoryWriter(
+        data_path,
+        initial_m.shape,
+        domain_wall_length=experiment.domain_wall_length,
+    )
+    writer.append(
+        initial_m,
+        simulation.vortex_position(),
+        step=simulation.start_step,
+        time=simulation.time(),
+    )
+
+    live_preview = _LivePreview(simulation) if preview else None
+    if live_preview is not None:
+        live_preview.update(simulation, simulation.start_step)
+
+    status = "completed"
+    last_saved_step = simulation.start_step
+    last_saved_time = simulation.time()
+    final_step = simulation.start_step + experiment.steps
+    try:
+        for step in tqdm(
+            range(simulation.start_step + 1, final_step + 1),
+            total=experiment.steps,
+            desc=experiment.slug or "experiment",
+            unit="step",
+        ):
+            simulation.vortex.advance(simulation.state, experiment.dt / 2)
+            simulation.llg.step(simulation.state, experiment.dt)
+            simulation.vortex.advance(simulation.state, experiment.dt / 2)
+
+            if step % experiment.stride == 0 or step == final_step:
+                saved_time = simulation.time()
+                writer.append(
+                    simulation.magnetization_for_storage(),
+                    simulation.vortex_position(),
+                    step=step,
+                    time=saved_time,
+                )
+                last_saved_step = step
+                last_saved_time = saved_time
+                if live_preview is not None:
+                    live_preview.update(simulation, step)
+    except KeyboardInterrupt:
+        status = "interrupted"
+    except BaseException:
+        status = "failed"
+        raise
+    finally:
+        writer.close(status)
+        experiment.status = status
+        experiment.completed_step = last_saved_step
+        experiment.completed_time = last_saved_time
+        experiment.device = str(simulation.device)
+        experiment.save(run_dir)
+        if live_preview is not None:
+            live_preview.close()
+
+    return {
+        "status": status,
+        "run_dir": str(run_dir),
+        "data_file": str(data_path),
+        "completed_step": last_saved_step,
+        "completed_time": last_saved_time,
     }
